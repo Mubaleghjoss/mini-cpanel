@@ -114,78 +114,249 @@ Complete developer reference for all FastAPI REST endpoints and WebSockets is av
 
 ---
 
-## Deployment Options
+## Production Deployment (Hybrid Setup) - *Recommended*
 
-### Option A: Static Frontend hosting (Vercel / Netlify)
-Since the frontend of `mini.cpanel` is a Next.js application, it can be deployed on static hosting platforms like Vercel or Netlify.
-1. Link your GitHub repository to Vercel or Netlify.
-2. Add the following environment variable in the dashboard project configuration:
-   * `NEXT_PUBLIC_API_URL`: The public domain URL of your backend server (e.g., `https://api.yourdomain.com`).
-3. Deploy the application.
-*Note: The backend API agent must run on a persistent virtual private server (VPS) because it requires direct, low-level OS access (Docker, systemd) to run orchestration commands.*
+The project is designed using a secure **hybrid architecture**:
+* **Frontend**: Hosted on **Vercel** for high availability, fast loading, and edge rendering.
+* **Backend Agent**: Hosted on your **VPS** via **Systemd** to allow direct, low-level OS access (Docker, systemctl, file system).
+* **Connection**: Securely bridged using a **Cloudflare Tunnel**, which encrypts traffic and removes the need to open any inbound firewall ports on your VPS.
 
-### Option B: Unified VPS Deployment with a Private Domain (Recommended)
-This approach runs both the frontend and backend on the same VPS, exposed securely under a private domain or subdomain.
-
-#### 1. Configure the Backend as a Persistent Daemon (Linux Systemd)
-To ensure the backend runs continuously in the background, create a systemd service file at `/etc/systemd/system/minicpanel-api.service`:
-
-```ini
-[Unit]
-Description=Mini cPanel FastAPI Backend Service
-After=network.target
-
-[Service]
-User=yourusername
-WorkingDirectory=/home/yourusername/mini-cpanel/api
-ExecStart=/home/yourusername/mini-cpanel/api/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080
-Restart=always
-
-# Environment Variables
-Environment="CPANEL_SECRET_KEY=your-production-secret-key"
-Environment="CPANEL_BACKEND_CORS_ORIGINS=https://cpanel.yourdomain.com"
-Environment="CPANEL_DATA_DIR=/home/yourusername/.minicpanel"
-Environment="CPANEL_APPS_DIR=/home/yourusername/apps"
-
-[Install]
-WantedBy=multi-user.target
+```mermaid
+graph LR
+    User([User Browser]) -->|HTTPS| Vercel[Vercel: cpanel.yourdomain.com]
+    User -->|HTTPS API Requests| Cloudflare[Cloudflare Edge: cpanel-api.yourdomain.com]
+    Cloudflare -->|Cloudflare Tunnel| VPS[VPS Localhost:8080]
+    VPS -->|systemd| Backend[mini-cpanel.api.service]
 ```
 
-Enable and start the service:
+### 1. Set Up the Backend Agent on VPS
+First, log in to your VPS via SSH:
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable minicpanel-api.service
-sudo systemctl start minicpanel-api.service
+ssh yourusername@your_vps_ip
 ```
 
-#### 2. Configure the Frontend as a Background Daemon
-1. Build the production application in the `/web` directory:
-   ```bash
-   npm run build
+Then, configure your FastAPI backend to run as a persistent daemon.
+
+1. Create a systemd service file at `/etc/systemd/system/mini-cpanel.api.service`:
+   ```ini
+   [Unit]
+   Description=Mini cPanel FastAPI Backend Service
+   After=network.target
+
+   [Service]
+   User=yourusername
+   WorkingDirectory=/home/yourusername/mini-cpanel/api
+   ExecStart=/home/yourusername/mini-cpanel/api/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080
+   Restart=always
+
+   # Environment Variables
+   Environment="CPANEL_SECRET_KEY=your-production-secret-key"
+   # Allow only your Vercel frontend domain to access the API (CORS Protection)
+   Environment="CPANEL_BACKEND_CORS_ORIGINS=https://cpanel.yourdomain.com"
+   Environment="CPANEL_DATA_DIR=/home/yourusername/.minicpanel"
+   Environment="CPANEL_APPS_DIR=/home/yourusername/apps"
+
+   [Install]
+   WantedBy=multi-user.target
    ```
-2. Start the daemon process. You can use PM2 to manage the background process:
+
+2. Enable and start the backend service:
    ```bash
-   pm2 start npm --name "minicpanel-web" -- start
+   sudo systemctl daemon-reload
+   sudo systemctl enable mini-cpanel.api.service
+   sudo systemctl start mini-cpanel.api.service
    ```
 
-#### 3. Set Up a Secure Reverse Proxy (Caddy / Nginx)
-To handle SSL certificates automatically and expose your dashboard securely over port 80/443, use **Caddy Server** (recommended for automatic Let's Encrypt integration).
+---
 
-Create a `Caddyfile`:
-```caddy
-cpanel.yourdomain.com {
-    # Route main requests to the Next.js frontend
-    reverse_proxy localhost:3000
-}
+### 2. Set Up Cloudflare Tunnel (`cloudflared`) on VPS
+Connect your backend port `8080` to your Cloudflare domain securely without opening any public incoming ports.
 
-cpanel.yourdomain.com/api/* {
-    # Route API requests to the FastAPI backend agent
-    reverse_proxy localhost:8080
-}
+1. **Install cloudflared**:
+   * **Option A: Download binary directly (Universal for Linux x86_64)**:
+     ```bash
+     sudo curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /usr/local/bin/cloudflared
+     sudo chmod +x /usr/local/bin/cloudflared
+     ```
+   * **Option B: Using Package Manager (Debian/Ubuntu)**:
+     ```bash
+     # Add Cloudflare gpg key
+     sudo mkdir -p --mode=0755 /usr/share/keyrings
+     curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
+
+     # Add package repository
+     echo 'deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared/ buster main' | sudo tee /etc/apt/sources.list.d/cloudflared.list
+
+     # Install cloudflared
+     sudo apt-get update && sudo apt-get install cloudflared
+     ```
+
+2. **Login & Authenticate**:
+   > [!IMPORTANT]
+   > **Prerequisite**: Your custom domain (e.g., `yourdomain.com`) must already be added and active in your Cloudflare account at [https://dash.cloudflare.com/](https://dash.cloudflare.com/).
+
+   ```bash
+   cloudflared tunnel login
+   ```
+   *Note for Headless VPS (No GUI)*: This command will display an authorization link. Copy the URL from your VPS terminal, paste it into your local computer's web browser, log in to your Cloudflare account at [https://dash.cloudflare.com/](https://dash.cloudflare.com/), and select the domain you want to authorize. Once authorized, `cloudflared` on your VPS will automatically detect it and download the required credentials certificate (`cert.pem`).
+
+3. **Create the Tunnel**:
+   ```bash
+   cloudflared tunnel create cpanel-tunnel
+   ```
+   This command creates the tunnel and outputs a UUID. It saves the credentials JSON file inside `~/.cloudflared/`.
+
+4. **Configure `config.yml`**:
+   Create a configuration file at `~/.cloudflared/config.yml`:
+   ```yaml
+   tunnel: <your-tunnel-uuid>
+   credentials-file: /home/yourusername/.cloudflared/<your-tunnel-uuid>.json
+
+   ingress:
+     # Route incoming API traffic to local FastAPI agent
+     - hostname: cpanel-api.yourdomain.com
+       service: http://localhost:8080
+     # Fallback rule returning 404
+     - service: http_status:404
+   ```
+
+5. **Create the DNS Route (Automatic CNAME)**:
+   Link your backend subdomain to the tunnel by running:
+   ```bash
+   cloudflared tunnel route dns cpanel-tunnel cpanel-api.yourdomain.com
+   ```
+   *Note*: This CLI command automatically creates a CNAME record in your DNS settings on [https://dash.cloudflare.com/](https://dash.cloudflare.com/), pointing `cpanel-api.yourdomain.com` to `<your-tunnel-uuid>.cfargotunnel.com`.
+   > [!NOTE]
+   > Ensure this record's **Proxy Status** is set to **Proxied (Orange Cloud)**. Cloudflare Tunnel requires proxying to be enabled to establish the secure connection to your VPS.
+
+6. **Run cloudflared as a Systemd Service**:
+   Create `/etc/systemd/system/cloudflared.service`:
+   ```ini
+   [Unit]
+   Description=Cloudflare Tunnel Daemon
+   After=network.target
+
+   [Service]
+   Type=simple
+   User=yourusername
+   WorkingDirectory=/home/yourusername/.cloudflared
+   ExecStart=/usr/bin/cloudflared tunnel --config /home/yourusername/.cloudflared/config.yml run
+   Restart=always
+   RestartSec=10
+
+   [Install]
+   WantedBy=multi-user.target
+   ```
+   *(Verify the path to cloudflared by running `which cloudflared` on your system).*
+
+   Enable and start the service:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable cloudflared.service
+   sudo systemctl start cloudflared.service
+   ```
+
+---
+
+### 3. Deploy Frontend on Vercel
+1. Import your repository into **Vercel**.
+2. Select the **Root Directory** as `web/`.
+3. In **Environment Variables**, configure:
+   * `NEXT_PUBLIC_API_URL`: `https://cpanel-api.yourdomain.com` (your public Cloudflare Tunnel URL. **Note**: The `https://` protocol prefix is required).
+4. Click **Deploy**.
+5. **Configure Custom Domain & DNS CNAME**:
+   * In Vercel Project Settings -> **Domains**, add your custom frontend domain (e.g., `cpanel.yourdomain.com`). Vercel will display the target CNAME destination (typically `cname.vercel-dns.com`).
+   * Go to your **Cloudflare Dashboard** ([https://dash.cloudflare.com/](https://dash.cloudflare.com/)), select your domain, navigate to **DNS -> Records**, and add the CNAME record manually:
+     * **Type**: `CNAME`
+     * **Name**: `cpanel` (or your chosen subdomain)
+     * **Target**: `cname.vercel-dns.com`
+     * **Proxy Status**: `DNS Only` (Grey Cloud) — *Important: Since Vercel handles SSL certificates automatically, this proxy status must be DNS Only (bypassing Cloudflare proxy) to prevent SSL handshake conflicts.*
+
+---
+
+### Option B: Docker Compose Deployment (Unified VPS)
+
+If you prefer to run both the frontend and backend on the same VPS using Docker, you can use **Docker Compose**. This containerizes both services and makes the deployment portable and easy to manage.
+
+#### 1. Create Dockerfiles
+
+Create `api/Dockerfile` for the backend:
+```dockerfile
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY . .
+RUN pip install --no-cache-dir .
+
+EXPOSE 8080
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
 ```
 
-Run Caddy to enable HTTPS automatically.
+Create `web/Dockerfile` for the frontend:
+```dockerfile
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+ARG NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+RUN npm run build
 
+FROM node:18-alpine AS runner
+WORKDIR /app
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/package*.json ./
+RUN npm install --only=production
+
+EXPOSE 3000
+CMD ["npm", "start"]
+```
+
+#### 2. Create the `docker-compose.yml`
+Create a `docker-compose.yml` in the root directory:
+```yaml
+version: '3.8'
+
+services:
+  backend:
+    build: ./api
+    ports:
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock  # Mount host Docker socket to manage containers
+      - minicpanel-data:/root/.minicpanel
+    environment:
+      - CPANEL_SECRET_KEY=your-production-secret-key
+      - CPANEL_BACKEND_CORS_ORIGINS=https://cpanel.yourdomain.com
+    restart: always
+
+  frontend:
+    build:
+      context: ./web
+      args:
+        - NEXT_PUBLIC_API_URL=https://cpanel-api.yourdomain.com
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  minicpanel-data:
+```
+
+#### 3. Run the Stack
+Start the services in the background:
+```bash
+docker compose up -d --build
+```
+Your frontend will be accessible at `http://localhost:3000` and your backend at `http://localhost:8080`.
+
+---
 
 ### Option C: Portable Binary
 
