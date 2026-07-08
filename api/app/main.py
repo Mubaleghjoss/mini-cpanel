@@ -1,4 +1,5 @@
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -55,7 +56,7 @@ async def lifespan(app: FastAPI):
         if user_count == 0:
             logger.warning("No users found in database. Seeding default admin user...")
             default_username = "admin"
-            default_password = "cpaneladminpassword"
+            default_password = secrets.token_urlsafe(16)
             
             hashed_password = get_password_hash(default_password)
             default_user = User(
@@ -65,6 +66,8 @@ async def lifespan(app: FastAPI):
             db.add(default_user)
             db.commit()
             logger.info(f"Default admin user created successfully. Username: {default_username}")
+            logger.info(f"Default admin password: {default_password}")
+            logger.warning("IMPORTANT: Change this password immediately after first login!")
     except Exception as e:
         logger.error(f"Error seeding database: {e}")
     finally:
