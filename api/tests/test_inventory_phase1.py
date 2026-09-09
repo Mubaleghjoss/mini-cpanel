@@ -1,0 +1,130 @@
+import json
+import sqlite3
+import tempfile
+import unittest
+from pathlib import Path
+
+from fastapi import HTTPException
+from sqlalchemy import create_engine
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from app.api.applications import list_applications, mutation_user
+from app.core.inventory_seed import seed_inventory
+from app.core.migrations import MigrationError, migrate, schema_version, validate_database_path
+from app.models.base import ApplicationEnvironment, ApplicationInventory, Base, User
+from app.schemas.applications import ApplicationResponse
+
+
+class InventoryPhase1Tests(unittest.TestCase):
+    def make_session(self):
+        engine = create_engine(
+            "sqlite://",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        Base.metadata.create_all(engine)
+        self.addCleanup(engine.dispose)
+        return sessionmaker(bind=engine)()
+
+    def test_migration_up_down_and_rollback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            db_path = data_dir / "minicpanel.db"
+            migrate("up", db_path=db_path, allowed_data_dir=data_dir)
+            self.assertEqual(schema_version(db_path, allowed_data_dir=data_dir), 2)
+            with sqlite3.connect(db_path) as connection:
+                table = connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' "
+                    "AND name='application_inventory'"
+                ).fetchone()
+                self.assertIsNotNone(table)
+
+            migrate("down", db_path=db_path, allowed_data_dir=data_dir)
+            self.assertEqual(schema_version(db_path, allowed_data_dir=data_dir), 1)
+            with sqlite3.connect(db_path) as connection:
+                table = connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' "
+                    "AND name='application_inventory'"
+                ).fetchone()
+                self.assertIsNone(table)
+
+            migrate("up", db_path=db_path, allowed_data_dir=data_dir)
+            migrate("rollback", db_path=db_path, allowed_data_dir=data_dir)
+            self.assertEqual(schema_version(db_path, allowed_data_dir=data_dir), 1)
+
+    def test_migration_rejects_arbitrary_database_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            data_dir = Path(directory)
+            with self.assertRaisesRegex(MigrationError, "configured mini cPanel database"):
+                validate_database_path(data_dir / "other.db", data_dir)
+
+    def test_environment_defaults_and_unique_key(self):
+        db = self.make_session()
+        app = ApplicationInventory(identity="defaults", display_name="Defaults")
+        production = ApplicationEnvironment(environment_key="production")
+        staging = ApplicationEnvironment(environment_key="staging")
+        app.environments.extend([production, staging])
+        db.add(app)
+        db.commit()
+
+        self.assertIs(production.read_only_default, True)
+        self.assertIs(staging.read_only_default, False)
+
+        db.add(ApplicationEnvironment(project_id=app.id, environment_key="staging"))
+        with self.assertRaises(IntegrityError):
+            db.commit()
+
+    def test_inventory_response_excludes_credentials(self):
+        db = self.make_session()
+        item = ApplicationInventory(identity="safe", display_name="Safe application")
+        item.environments.append(
+            ApplicationEnvironment(
+                environment_key="production",
+                runtime_path="/srv/safe",
+                domain="safe.example",
+                branch="main",
+                service_identifier="safe.service",
+            )
+        )
+        db.add(item)
+        db.commit()
+
+        body = [ApplicationResponse.model_validate(row).model_dump(mode="json") for row in list_applications(db=db)]
+        serialized = json.dumps(body).lower()
+        for forbidden in ("password", "credential", "database", "secret", "token"):
+            self.assertNotIn(forbidden, serialized)
+
+    def test_inventory_mutation_denied_for_non_super_admin(self):
+        user = User(username="developer", password_hash="unused", role="developer")
+        with self.assertRaises(HTTPException) as raised:
+            mutation_user(current_user=user)
+        self.assertEqual(raised.exception.status_code, 403)
+
+    def test_initial_inventory_seed_is_idempotent(self):
+        db = self.make_session()
+        self.assertEqual(seed_inventory(db), 4)
+        self.assertEqual(seed_inventory(db), 0)
+        self.assertEqual(db.query(ApplicationInventory).count(), 4)
+
+        pkg = db.query(ApplicationInventory).filter_by(identity="pkgenerus").one()
+        self.assertEqual(pkg.source_path, "/home/hermesadmin/projects/pembinaan-karakter-generus")
+        environments = {item.environment_key: item for item in pkg.environments}
+        self.assertEqual(set(environments), {"production", "staging"})
+        self.assertEqual(environments["production"].runtime_path, "/var/www/pkgenerus.my.id")
+        self.assertEqual(environments["production"].domain, "pkgenerus.my.id")
+        self.assertEqual(environments["production"].branch, "main")
+        self.assertIs(environments["production"].read_only_default, True)
+        self.assertEqual(environments["staging"].runtime_path, "/var/www/pkgenerus-staging")
+        self.assertEqual(environments["staging"].domain, "staging.pkgenerus.my.id")
+        self.assertEqual(environments["staging"].branch, "develop")
+        self.assertIs(environments["staging"].read_only_default, False)
+
+        for identity in ("sma-afbs", "keuangan-sma-afbs", "mini-cpanel"):
+            item = db.query(ApplicationInventory).filter_by(identity=identity).one()
+            self.assertEqual(item.environments, [])
+
+
+if __name__ == "__main__":
+    unittest.main()

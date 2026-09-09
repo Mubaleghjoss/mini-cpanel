@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, ForeignKey, CheckConstraint, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -38,6 +38,67 @@ class Project(Base):
     backups = relationship("Backup", back_populates="project", cascade="all, delete-orphan")
     logs = relationship("ActivityLog", back_populates="project", cascade="all, delete-orphan")
     deployments = relationship("Deployment", back_populates="project", cascade="all, delete-orphan")
+
+class ApplicationInventory(Base):
+    __tablename__ = "application_inventory"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    identity = Column(String, unique=True, index=True, nullable=False)
+    display_name = Column(String, nullable=False)
+    source_path = Column(String, nullable=True)
+    classification = Column(String, nullable=False, default="managed_application")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    environments = relationship(
+        "ApplicationEnvironment",
+        back_populates="application",
+        cascade="all, delete-orphan",
+        order_by="ApplicationEnvironment.environment_key",
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "classification IN ('managed_application', 'development_only', 'system_tool')",
+            name="ck_application_inventory_classification",
+        ),
+    )
+
+
+class ApplicationEnvironment(Base):
+    __tablename__ = "application_environments"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    project_id = Column(
+        String,
+        ForeignKey("application_inventory.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    environment_key = Column(String, nullable=False)
+    runtime_path = Column(String, nullable=True)
+    branch = Column(String, nullable=True)
+    domain = Column(String, nullable=True)
+    service_identifier = Column(String, nullable=True)
+    read_only_default = Column(
+        Boolean,
+        nullable=False,
+        default=lambda context: context.get_current_parameters().get("environment_key") == "production",
+    )
+
+    application = relationship("ApplicationInventory", back_populates="environments")
+
+    __table_args__ = (
+        CheckConstraint(
+            "environment_key IN ('production', 'staging')",
+            name="ck_application_environment_key",
+        ),
+        UniqueConstraint(
+            "project_id",
+            "environment_key",
+            name="uq_application_environment_project_key",
+        ),
+    )
+
 
 class Domain(Base):
     __tablename__ = "domains"

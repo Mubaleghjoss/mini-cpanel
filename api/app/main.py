@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.core.database import engine, Base, SessionLocal
+from app.core.database import SessionLocal
 from app.models.base import User
 from app.core.security import get_password_hash
 from app.api.auth import router as auth_router
@@ -19,6 +19,7 @@ from app.api.terminal import router as terminal_router
 from app.api.users import router as users_router
 from app.api.docker import router as docker_router
 from app.api.ingress import router as ingress_router
+from app.api.applications import router as applications_router
 from app.core.scheduler import start_scheduler
 
 
@@ -29,29 +30,6 @@ logger = logging.getLogger("cpanel_lite")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Initializing database tables...")
-    Base.metadata.create_all(bind=engine)
-    
-    from sqlalchemy import text
-    db_init = SessionLocal()
-    try:
-        cursor = db_init.execute(text("PRAGMA table_info(projects)"))
-        columns = [row[1] for row in cursor.fetchall()]
-        if "webhook_secret" not in columns:
-            logger.info("Adding webhook_secret column to projects table...")
-            db_init.execute(text("ALTER TABLE projects ADD COLUMN webhook_secret VARCHAR"))
-            db_init.commit()
-        if "ping_latency_ms" not in columns:
-            db_init.execute(text("ALTER TABLE projects ADD COLUMN ping_latency_ms INTEGER"))
-            db_init.commit()
-        if "ping_error_detail" not in columns:
-            db_init.execute(text("ALTER TABLE projects ADD COLUMN ping_error_detail VARCHAR"))
-            db_init.commit()
-    except Exception as e:
-        logger.error(f"Error checking/migrating projects table columns: {e}")
-    finally:
-        db_init.close()
-    
     db = SessionLocal()
     try:
         user_count = db.query(User).count()
@@ -115,6 +93,7 @@ app.include_router(terminal_router, prefix=f"{settings.API_V1_STR}/system/termin
 app.include_router(users_router, prefix=f"{settings.API_V1_STR}/users", tags=["User Management"])
 app.include_router(docker_router, prefix=f"{settings.API_V1_STR}/docker", tags=["Docker Administrator"])
 app.include_router(ingress_router, prefix=f"{settings.API_V1_STR}/ingress", tags=["Ingress Proxy Router"])
+app.include_router(applications_router, prefix=f"{settings.API_V1_STR}/applications", tags=["Applications Inventory"])
 
 
 @app.get("/health")
