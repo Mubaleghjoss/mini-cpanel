@@ -2,6 +2,7 @@ import os
 import struct
 import asyncio
 import logging
+import signal
 
 try:
     import pty
@@ -53,6 +54,40 @@ def set_winsize(fd: int, row: int, col: int):
         return
     win = struct.pack("HHHH", row, col, 0, 0)
     fcntl.ioctl(fd, termios.TIOCSWINSZ, win)
+
+async def terminate_and_reap_child(pid: int) -> None:
+    """Stop a terminal child and reap it without blocking the event loop."""
+    def reap_nonblocking() -> bool:
+        try:
+            reaped_pid, _ = os.waitpid(pid, os.WNOHANG)
+            return reaped_pid == pid
+        except (ChildProcessError, OSError):
+            return True
+
+    if reap_nonblocking():
+        return
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except (ProcessLookupError, OSError):
+        pass
+
+    for _ in range(40):
+        if reap_nonblocking():
+            return
+        await asyncio.sleep(0.05)
+
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except (ProcessLookupError, OSError):
+        pass
+
+    for _ in range(40):
+        if reap_nonblocking():
+            return
+        await asyncio.sleep(0.05)
+
+    logger.warning(f"Terminal child pid={pid} did not exit after SIGKILL.")
 
 
 @router.websocket("/ws")
@@ -158,9 +193,6 @@ async def terminal_ws(
             os.close(master_fd)
         except Exception:
             pass
-        try:
-            os.kill(pid, 15)
-        except Exception:
-            pass
+        await terminate_and_reap_child(pid)
         output_queue.put_nowait(None)
         await write_task
