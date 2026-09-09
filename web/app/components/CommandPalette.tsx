@@ -72,6 +72,14 @@ export default function CommandPalette({
       roles: ["developer", "super_admin"],
     },
     {
+      id: "nav-applications",
+      label: "Go to Applications",
+      category: "Navigation",
+      shortcut: ["G", "I"],
+      action: () => setActiveTab("applications"),
+      roles: ["viewer", "developer", "super_admin"],
+    },
+    {
       id: "nav-apps",
       label: "Go to App Store (Marketplace)",
       category: "Navigation",

@@ -6,6 +6,7 @@ import AuthForm from "./components/Auth/AuthForm";
 import DashboardTab, { SystemMetrics, TrafficMetrics } from "./components/Dashboard/DashboardTab";
 import FileExplorerTab from "./components/FileExplorer/FileExplorerTab";
 import ProjectsTab from "./components/Projects/ProjectsTab";
+import ApplicationsTab from "./components/Applications/ApplicationsTab";
 import LogsDrawer from "./components/Projects/LogsDrawer";
 import BackupsTab from "./components/Backups/BackupsTab";
 import SettingsTab from "./components/Settings/SettingsTab";
@@ -114,9 +115,9 @@ export default function App() {
   useEffect(() => {
     if (!token) return;
     const allowedTabs: Record<string, TabType[]> = {
-      viewer: ["dashboard"],
-      developer: ["dashboard", "files", "projects", "apps", "cron", "docker", "ingress"],
-      super_admin: ["dashboard", "files", "projects", "apps", "cron", "databases", "backup", "settings", "terminal", "users", "docker", "ingress"],
+      viewer: ["dashboard", "applications"],
+      developer: ["dashboard", "files", "projects", "applications", "apps", "cron", "docker", "ingress"],
+      super_admin: ["dashboard", "files", "projects", "applications", "apps", "cron", "databases", "backup", "settings", "terminal", "users", "docker", "ingress"],
     };
     const roleAllowed = allowedTabs[userRole] || ["dashboard"];
     if (!roleAllowed.includes(activeTab)) {
@@ -381,6 +382,10 @@ export default function App() {
               setLogsProjectId={setLogsProjectId}
               setLogsDrawerOpen={setLogsDrawerOpen}
             />
+          )}
+
+          {activeTab === "applications" && (
+            <ApplicationsTab token={token} />
           )}
 
           {activeTab === "apps" && (

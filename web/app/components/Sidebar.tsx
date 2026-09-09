@@ -1,6 +1,6 @@
 import React from "react";
 
-export type TabType = "dashboard" | "files" | "projects" | "apps" | "cron" | "backup" | "settings" | "databases" | "terminal" | "users" | "docker" | "ingress";
+export type TabType = "dashboard" | "files" | "projects" | "applications" | "apps" | "cron" | "backup" | "settings" | "databases" | "terminal" | "users" | "docker" | "ingress";
 
 interface SidebarProps {
   activeTab: TabType;
@@ -56,8 +56,18 @@ export default function Sidebar({
       )
     },
     {
-      id: "apps" as TabType,
+      id: "applications" as TabType,
       num: "04",
+      label: "Applications",
+      icon: (
+        <svg className="w-4 h-4 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 20h16M6 17V7l6-4 6 4v10M9 17v-5h6v5" />
+        </svg>
+      )
+    },
+    {
+      id: "apps" as TabType,
+      num: "05",
       label: "App Store",
       icon: (
         <svg className="w-4 h-4 text-current" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -149,9 +159,9 @@ export default function Sidebar({
   ];
 
   const allowedTabs: Record<string, TabType[]> = {
-    viewer: ["dashboard"],
-    developer: ["dashboard", "files", "projects", "apps", "cron", "docker", "ingress"],
-    super_admin: ["dashboard", "files", "projects", "apps", "cron", "databases", "backup", "settings", "terminal", "users", "docker", "ingress"],
+    viewer: ["dashboard", "applications"],
+    developer: ["dashboard", "files", "projects", "applications", "apps", "cron", "docker", "ingress"],
+    super_admin: ["dashboard", "files", "projects", "applications", "apps", "cron", "databases", "backup", "settings", "terminal", "users", "docker", "ingress"],
   };
   const roleAllowed = allowedTabs[userRole] || ["dashboard"];
   const filteredMenuItems = menuItems.filter((item) => roleAllowed.includes(item.id));
