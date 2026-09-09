@@ -1,5 +1,8 @@
 import json
+import os
 import sqlite3
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.api.applications import list_applications, mutation_user
+from app.api.applications import list_applications, mutation_user, read_user
 from app.core.inventory_seed import seed_inventory
 from app.core.migrations import MigrationError, migrate, schema_version, validate_database_path
 from app.models.base import ApplicationEnvironment, ApplicationInventory, Base, User
@@ -60,6 +63,27 @@ class InventoryPhase1Tests(unittest.TestCase):
             with self.assertRaisesRegex(MigrationError, "configured mini cPanel database"):
                 validate_database_path(data_dir / "other.db", data_dir)
 
+    def test_import_does_not_apply_schema_migrations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            env = os.environ.copy()
+            env["MINICPANEL_DATA_DIR"] = directory
+            result = subprocess.run(
+                [sys.executable, "-c", "import app.main"],
+                cwd=Path(__file__).resolve().parents[1],
+                env=env,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.stderr, "")
+            db_path = Path(directory) / "minicpanel.db"
+            if db_path.exists():
+                with sqlite3.connect(db_path) as connection:
+                    tables = connection.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    ).fetchall()
+                self.assertEqual(tables, [])
+
     def test_environment_defaults_and_unique_key(self):
         db = self.make_session()
         app = ApplicationInventory(identity="defaults", display_name="Defaults")
@@ -73,6 +97,11 @@ class InventoryPhase1Tests(unittest.TestCase):
         self.assertIs(staging.read_only_default, False)
 
         db.add(ApplicationEnvironment(project_id=app.id, environment_key="staging"))
+        with self.assertRaises(IntegrityError):
+            db.commit()
+        db.rollback()
+
+        db.add(ApplicationInventory(identity="defaults", display_name="Duplicate"))
         with self.assertRaises(IntegrityError):
             db.commit()
 
@@ -96,11 +125,18 @@ class InventoryPhase1Tests(unittest.TestCase):
         for forbidden in ("password", "credential", "database", "secret", "token"):
             self.assertNotIn(forbidden, serialized)
 
-    def test_inventory_mutation_denied_for_non_super_admin(self):
-        user = User(username="developer", password_hash="unused", role="developer")
-        with self.assertRaises(HTTPException) as raised:
-            mutation_user(current_user=user)
-        self.assertEqual(raised.exception.status_code, 403)
+    def test_inventory_rbac(self):
+        for role in ("super_admin", "developer", "viewer"):
+            user = User(username=role, password_hash="unused", role=role)
+            self.assertIs(read_user(current_user=user), user)
+
+        admin = User(username="admin", password_hash="unused", role="super_admin")
+        self.assertIs(mutation_user(current_user=admin), admin)
+        for role in ("developer", "viewer"):
+            user = User(username=role, password_hash="unused", role=role)
+            with self.assertRaises(HTTPException) as raised:
+                mutation_user(current_user=user)
+            self.assertEqual(raised.exception.status_code, 403)
 
     def test_initial_inventory_seed_is_idempotent(self):
         db = self.make_session()
