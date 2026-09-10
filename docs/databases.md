@@ -1,6 +1,6 @@
 # Database Administrator API (/api/v1/databases)
 
-Manages client connections to SQLite, PostgreSQL, or MySQL databases, and provides GUI capabilities for browsing tables, schemas, and executing raw SQL queries.
+Manages client connections to SQLite, PostgreSQL, or MySQL databases, and provides GUI capabilities for browsing tables and schemas.
 
 ---
 
@@ -99,16 +99,5 @@ Retrieves paginated row data from a specific table.
 }
 ```
 
-### 4. Run Raw SQL Query
-Executes a raw SQL statement on the connected database. Restricted to `super_admin` accounts.
-* Endpoint: `POST /api/v1/databases/{db_id}/query`
-
-#### Request Payload
-```json
-{
-  "query": "SELECT * FROM users WHERE role = 'developer' LIMIT 5"
-}
-```
-
-#### Successful Response (`200 OK`)
-Returns the same column/rows format as the Browse Table Rows endpoint.
+### 4. Raw SQL Queries (Deprecated)
+Raw SQL execution is disabled. `POST /api/v1/databases/{db_id}/query` returns `410 Gone` with a stable deprecation message and does not execute SQL.

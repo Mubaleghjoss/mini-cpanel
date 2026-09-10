@@ -1,6 +1,5 @@
-import time
 from typing import Dict, Any, List
-from sqlalchemy import create_engine, inspect, text, Table, MetaData, select, func
+from sqlalchemy import create_engine, inspect, Table, MetaData, select, func
 from app.models.base import DatabaseConnection
 from app.core.config import settings
 
@@ -80,26 +79,4 @@ def get_table_data(engine, table_name: str, page: int = 1, limit: int = 50) -> D
         "total": total_records,
         "page": page,
         "limit": limit
-    }
-
-def execute_raw_query(engine, query_str: str) -> Dict[str, Any]:
-    start_time = time.time()
-    with engine.connect() as connection:
-        trans = connection.begin()
-        try:
-            result = connection.execute(text(query_str))
-            columns = list(result.keys()) if result.returns_rows else []
-            rows = [list(row) for row in result] if result.returns_rows else []
-            rows_affected = result.rowcount
-            trans.commit()
-        except Exception as e:
-            trans.rollback()
-            raise e
-            
-    execution_time_ms = (time.time() - start_time) * 1000
-    return {
-        "columns": columns,
-        "rows": rows,
-        "rows_affected": rows_affected if rows_affected is not None else 0,
-        "execution_time_ms": round(execution_time_ms, 2)
     }

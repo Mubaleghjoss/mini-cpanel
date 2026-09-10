@@ -54,7 +54,7 @@ graph TD
 2. **Project Deployer & Auto-Setup Engine**: Automated deployment of projects directly from Git repositories using Docker, Systemd (Linux), or NSSM (Windows) with dynamic port allocation. Features an **Auto-Setup Engine** that automatically detects project stacks and configures environments for **Node.js, Bun, Python (virtualenv), PHP (Composer), Go, and Rust**.
 3. **Deployment History & Build Logs**: Tracks git commit metadata (commit message, SHA, author, and timestamp) for every deployment run and records comprehensive build/compilation logs.
 4. **Web-Based File Explorer**: Interactive file manager allowing users to browse, create, delete, and edit files (such as configuration `.env` files) directly in their web browser.
-5. **Database Administrator**: A lightweight administration interface to inspect tables, review schemas, perform pagination on rows, and execute raw SQL queries securely for SQLite, PostgreSQL, and MySQL.
+5. **Database Administrator**: A lightweight administration interface to inspect tables, review schemas, and paginate rows for SQLite, PostgreSQL, and MySQL. Raw SQL queries are disabled.
 6. **Task Scheduler (Cron Jobs)**: An integrated task scheduler with an interactive cron expression generator and log monitors to capture output and execution history.
 7. **Backup & Recovery System**: Folder and database compression tools with scheduled automated backups, supporting local storage and remote storage configurations.
 8. **SSL/HTTPS Automation**: Automated Let's Encrypt SSL certificate issuance and renewal (via ACME/Certbot) for configured domains and subdomains pointing to the server.

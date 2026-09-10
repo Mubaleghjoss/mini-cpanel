@@ -8,18 +8,16 @@ from app.models.base import User, DatabaseConnection
 from app.schemas.databases import (
     DatabaseConnectionCreate,
     DatabaseConnectionResponse,
-    QueryRequest,
-    QueryResponse
 )
 from app.core.database_admin import (
     get_dynamic_engine,
     list_tables,
     get_table_schema,
-    get_table_data,
-    execute_raw_query
+    get_table_data
 )
 
 router = APIRouter(dependencies=[Depends(RoleChecker(["super_admin"]))])
+disabled_query_router = APIRouter()
 
 def get_conn_by_id(id: str, db: Session) -> DatabaseConnection:
     if id == "primary-sqlite":
@@ -142,21 +140,9 @@ def get_database_table_data(
             detail=f"Failed to fetch table data: {str(e)}"
         )
 
-@router.post("/{id}/query", response_model=QueryResponse)
-def run_database_query(
-    id: str,
-    query_in: QueryRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    conn = get_conn_by_id(id, db)
-    try:
-        engine = get_dynamic_engine(conn)
-        result = execute_raw_query(engine, query_in.query)
-        engine.dispose()
-        return result
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"SQL Execution Error: {str(e)}"
-        )
+@disabled_query_router.post("/{id}/query")
+def run_disabled_database_query(id: str):
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Raw SQL queries are no longer available."
+    )

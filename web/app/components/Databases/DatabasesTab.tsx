@@ -45,17 +45,6 @@ export default function DatabasesTab({ token, addLog }: DatabasesTabProps) {
   const [page, setPage] = useState(1);
   const constLimit = 20;
 
-  // Raw Query states
-  const [isQueryView, setIsQueryView] = useState(false);
-  const [rawQuery, setRawQuery] = useState("");
-  const [queryResult, setQueryResult] = useState<{
-    columns: string[];
-    rows: unknown[][];
-    rows_affected: number;
-    execution_time_ms: number;
-    error?: string;
-  } | null>(null);
-
   // New Connection Form States
   const [showAddForm, setShowAddForm] = useState(false);
   const [formName, setFormName] = useState("");
@@ -235,7 +224,6 @@ export default function DatabasesTab({ token, addLog }: DatabasesTabProps) {
             setSelectedTable(null);
             setColumns([]);
             setRows([]);
-            setQueryResult(null);
           }
           fetchDatabases();
         } catch (err) {
@@ -247,43 +235,6 @@ export default function DatabasesTab({ token, addLog }: DatabasesTabProps) {
     });
   };
 
-  const handleExecuteQuery = async () => {
-    if (!rawQuery.trim()) return;
-    setLoading(true);
-    setQueryResult(null);
-    addLog(`Executing custom SQL query on selected database...`);
-
-    try {
-      const response = await apiClient.fetch(`http://localhost:8080/api/v1/databases/${selectedDbId}/query`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ query: rawQuery }),
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.detail || "Query execution failed");
-      }
-
-      setQueryResult(data);
-      addLog(`Query completed successfully in ${data.execution_time_ms}ms.`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "SQL execution failed";
-      setQueryResult({
-        columns: [],
-        rows: [],
-        rows_affected: 0,
-        execution_time_ms: 0,
-        error: msg,
-      });
-      addLog(`Database Admin Error: ${msg}`);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <section className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -314,11 +265,9 @@ export default function DatabasesTab({ token, addLog }: DatabasesTabProps) {
                 <button
                   onClick={() => {
                     setSelectedDbId(db.id);
-                    setIsQueryView(false);
                     setSelectedTable(null);
                     setColumns([]);
                     setRows([]);
-                    setQueryResult(null);
                   }}
                   className="flex-1 text-left truncate"
                 >
@@ -471,11 +420,10 @@ export default function DatabasesTab({ token, addLog }: DatabasesTabProps) {
                   key={tbl}
                   onClick={() => {
                     setSelectedTable(tbl);
-                    setIsQueryView(false);
                     setPage(1);
                   }}
                   className={`text-left p-2 rounded-lg border transition-all ${
-                    selectedTable === tbl && !isQueryView
+                    selectedTable === tbl
                       ? "border-cobalt bg-cobalt/10 text-cobalt font-bold"
                       : "border-border-sem text-muted-sem hover:text-foreground-sem hover:bg-input-sem"
                   }`}
@@ -501,19 +449,7 @@ export default function DatabasesTab({ token, addLog }: DatabasesTabProps) {
             </span>
           </div>
 
-          <button
-            onClick={() => {
-              setIsQueryView(true);
-              setSelectedTable(null);
-            }}
-            className={`px-3 py-1.5 font-mono text-xs rounded border transition-all ${
-              isQueryView
-                ? "bg-cobalt border-cobalt text-white font-bold"
-                : "border-border-sem text-muted-sem hover:text-foreground-sem"
-            }`}
-          >
-            SQL QUERY EDITOR
-          </button>
+
         </div>
 
         {error && (
@@ -523,84 +459,7 @@ export default function DatabasesTab({ token, addLog }: DatabasesTabProps) {
         )}
 
         {/* Dynamic Inner Panel */}
-        {isQueryView ? (
-          /* RAW SQL QUERY VIEWER */
-          <div className="flex flex-col gap-4 border border-border-sem p-4 rounded-lg bg-card-sem">
-            <h3 className="text-xs font-mono text-muted-sem tracking-wider uppercase border-b border-border-sem pb-2">
-              Execute SQL query on dynamic connection
-            </h3>
-
-            <div className="flex flex-col gap-2 mt-2">
-              <textarea
-                value={rawQuery}
-                onChange={(e) => setRawQuery(e.target.value)}
-                rows={5}
-                className="bg-input-sem text-foreground-sem font-mono text-xs border border-border-sem rounded-lg p-2.5 w-full focus:outline-none focus:border-cobalt"
-                placeholder="SELECT * FROM users LIMIT 10;"
-              />
-            </div>
-
-            <div className="flex">
-              <button
-                onClick={handleExecuteQuery}
-                disabled={loading || !rawQuery.trim()}
-                className="bg-cobalt hover:bg-cobalt/90 text-white font-mono text-xs px-4 py-2 rounded-lg font-bold transition-all disabled:opacity-50"
-              >
-                {loading ? "EXECUTING SQL..." : "RUN QUERY"}
-              </button>
-            </div>
-
-            {queryResult && (
-              <div className="flex flex-col gap-3 mt-4 border-t border-border-sem pt-4">
-                <div className="flex justify-between items-center text-[10px] text-muted-sem font-mono uppercase">
-                  <span>Execution Time: {queryResult.execution_time_ms} ms</span>
-                  <span>Rows Affected: {queryResult.rows_affected}</span>
-                </div>
-
-                {queryResult.error ? (
-                  <div className="text-xs text-red-400 font-mono border border-red-500/20 bg-red-500/5 p-3 rounded-lg">
-                    ERROR: {queryResult.error}
-                  </div>
-                ) : queryResult.columns.length === 0 ? (
-                  <div className="text-xs text-muted-sem font-mono p-3 border border-border-sem rounded-lg bg-input-sem italic">
-                    Query successfully executed. No output returned.
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto border border-border-sem rounded-lg max-h-96">
-                    <table className="w-full border-collapse text-left font-mono text-xs text-foreground-sem">
-                      <thead className="bg-input-sem border-b border-border-sem font-bold text-muted-sem">
-                        <tr>
-                          {queryResult.columns.map((col) => (
-                            <th key={col} className="p-2.5 border-r border-border-sem">
-                              {col}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border-sem">
-                        {queryResult.rows.map((row, idx) => (
-                          <tr key={idx} className="hover:bg-input-sem">
-                            {row.map((val, cellIdx) => (
-                              <td key={cellIdx} className="p-2.5 border-r border-border-sem truncate max-w-xs">
-                                {val === null ? (
-                                  <span className="text-muted-sem italic">NULL</span>
-                                ) : typeof val === "boolean" ? (
-                                  val ? "TRUE" : "FALSE"
-                                ) : (
-                                  String(val)
-                                )}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        ) : selectedTable ? (
+        {selectedTable ? (
           /* TABLE BROWSING / SCHEMA VIEW */
           <div className="flex flex-col gap-4 border border-border-sem p-4 rounded-lg bg-card-sem">
             {/* Table inner sub tabs */}
@@ -746,9 +605,6 @@ export default function DatabasesTab({ token, addLog }: DatabasesTabProps) {
               />
             </svg>
             <p>Select a table from the sidebar list to browse schema / rows</p>
-            <p className="text-muted-sem text-[10px]">
-              Or open the SQL Query Editor at the top to write raw commands
-            </p>
           </div>
         )}
       </article>

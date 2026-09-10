@@ -13,7 +13,10 @@ from app.api.files import router as files_router
 from app.api.projects import router as projects_router
 from app.api.backups import router as backups_router
 from app.api.notifications import router as notifications_router
-from app.api.databases import router as databases_router
+from app.api.databases import (
+    disabled_query_router,
+    router as databases_router,
+)
 from app.api.marketplace import router as marketplace_router
 from app.api.terminal import router as terminal_router
 from app.api.users import router as users_router
@@ -88,6 +91,7 @@ app.include_router(projects_router, prefix=f"{settings.API_V1_STR}/projects", ta
 app.include_router(backups_router, prefix=f"{settings.API_V1_STR}/backups", tags=["Backup Manager"])
 app.include_router(notifications_router, prefix=f"{settings.API_V1_STR}/notifications", tags=["Notification Manager"])
 app.include_router(databases_router, prefix=f"{settings.API_V1_STR}/databases", tags=["Database Administrator"])
+app.include_router(disabled_query_router, prefix=f"{settings.API_V1_STR}/databases", tags=["Database Administrator"])
 app.include_router(marketplace_router, prefix=f"{settings.API_V1_STR}/marketplace", tags=["App Store Marketplace"])
 app.include_router(terminal_router, prefix=f"{settings.API_V1_STR}/system/terminal", tags=["Terminal Console"])
 app.include_router(users_router, prefix=f"{settings.API_V1_STR}/users", tags=["User Management"])

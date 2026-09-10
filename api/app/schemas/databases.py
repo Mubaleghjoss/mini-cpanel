@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict
-from typing import Optional, List, Dict, Any
+from typing import Optional
 
 class DatabaseConnectionBase(BaseModel):
     name: str
@@ -17,12 +17,3 @@ class DatabaseConnectionResponse(DatabaseConnectionBase):
     id: str
     
     model_config = ConfigDict(from_attributes=True)
-
-class QueryRequest(BaseModel):
-    query: str
-
-class QueryResponse(BaseModel):
-    columns: List[str]
-    rows: List[List[Any]]
-    rows_affected: int
-    execution_time_ms: float
