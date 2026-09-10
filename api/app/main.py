@@ -90,8 +90,9 @@ app.include_router(files_router, prefix=f"{settings.API_V1_STR}/files", tags=["F
 app.include_router(projects_router, prefix=f"{settings.API_V1_STR}/projects", tags=["Project Manager"])
 app.include_router(backups_router, prefix=f"{settings.API_V1_STR}/backups", tags=["Backup Manager"])
 app.include_router(notifications_router, prefix=f"{settings.API_V1_STR}/notifications", tags=["Notification Manager"])
-app.include_router(databases_router, prefix=f"{settings.API_V1_STR}/databases", tags=["Database Administrator"])
+# Register the terminal 410 route first so it short-circuits the protected database router.
 app.include_router(disabled_query_router, prefix=f"{settings.API_V1_STR}/databases", tags=["Database Administrator"])
+app.include_router(databases_router, prefix=f"{settings.API_V1_STR}/databases", tags=["Database Administrator"])
 app.include_router(marketplace_router, prefix=f"{settings.API_V1_STR}/marketplace", tags=["App Store Marketplace"])
 app.include_router(terminal_router, prefix=f"{settings.API_V1_STR}/system/terminal", tags=["Terminal Console"])
 app.include_router(users_router, prefix=f"{settings.API_V1_STR}/users", tags=["User Management"])
