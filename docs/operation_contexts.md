@@ -1,0 +1,9 @@
+# Phase 2.1: Canonical Operation Context
+
+`POST /api/v1/operation-contexts/validate-dry-run` is a super-admin-only, authenticated validation boundary for future privileged operations. Its payload accepts only `application_environment_id` and an operation kind. The server resolves the application ID and identity, environment key, target type, action class, and policy from `application_environments` and `application_inventory`; caller-supplied versions of those fields are forbidden.
+
+Supported dry-run kinds are `database_connection_registration`, `backup_plan`, `backup_run`, and `release_deploy`. They are write-capable future actions, so production is enforced read-only by the resolver and returns a validation error. The endpoint neither writes an operation context nor creates database connections, backup plans/runs, or deployments. Responses intentionally contain no credentials, connection details, or secrets.
+
+Migration version 3 adds `environment_operation_contexts`; version 4 completes its integrity gates without dropping snapshots. The final table has checked enums and boolean values, restricted foreign keys to the canonical application and environment, and a database trigger that rejects an application/environment pair unless the environment belongs to that application. A second trigger makes stored snapshots immutable. Apply or reverse it only with the explicit migration operator (`python -m app.core.migrations up|down`) after completing the migration safety gates and creating a fresh verified backup; application startup never performs schema migration.
+
+Existing `projects`, database, backup, and deployment APIs/UI remain compatibility-only. Phase 2.1 does not rewrite their records or change their behavior. New privileged-operation capabilities must resolve and persist an authoritative Phase-1 environment context rather than relying on ambiguous legacy `projects`.

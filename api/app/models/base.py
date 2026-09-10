@@ -56,6 +56,7 @@ class ApplicationInventory(Base):
         cascade="all, delete-orphan",
         order_by="ApplicationEnvironment.environment_key",
     )
+    operation_contexts = relationship("EnvironmentOperationContext", back_populates="application")
 
     __table_args__ = (
         CheckConstraint(
@@ -86,6 +87,7 @@ class ApplicationEnvironment(Base):
     )
 
     application = relationship("ApplicationInventory", back_populates="environments")
+    operation_contexts = relationship("EnvironmentOperationContext", back_populates="environment")
 
     __table_args__ = (
         CheckConstraint(
@@ -96,6 +98,57 @@ class ApplicationEnvironment(Base):
             "project_id",
             "environment_key",
             name="uq_application_environment_project_key",
+        ),
+    )
+
+
+class EnvironmentOperationContext(Base):
+    """Immutable snapshots reserved for future privileged operation submissions."""
+
+    __tablename__ = "environment_operation_contexts"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    application_environment_id = Column(
+        String,
+        ForeignKey("application_environments.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    application_id = Column(
+        String,
+        ForeignKey("application_inventory.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    application_identity = Column(String, nullable=False)
+    environment_key = Column(String, nullable=False)
+    target_type = Column(String, nullable=False)
+    action_class = Column(String, nullable=False)
+    policy_mode = Column(String, nullable=False)
+    read_only = Column(Boolean, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    application = relationship("ApplicationInventory", back_populates="operation_contexts")
+    environment = relationship("ApplicationEnvironment", back_populates="operation_contexts")
+
+    __table_args__ = (
+        CheckConstraint(
+            "environment_key IN ('production', 'staging')",
+            name="ck_environment_operation_context_environment_key",
+        ),
+        CheckConstraint(
+            "target_type IN ('database_connection', 'backup', 'release')",
+            name="ck_environment_operation_context_target_type",
+        ),
+        CheckConstraint(
+            "action_class IN ('registration', 'plan', 'run', 'deploy')",
+            name="ck_environment_operation_context_action_class",
+        ),
+        CheckConstraint(
+            "policy_mode IN ('standard', 'read_only')",
+            name="ck_environment_operation_context_policy_mode",
+        ),
+        CheckConstraint(
+            "read_only IN (0, 1)",
+            name="ck_environment_operation_context_read_only",
         ),
     )
 

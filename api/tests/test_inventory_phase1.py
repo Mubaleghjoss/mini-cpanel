@@ -36,7 +36,7 @@ class InventoryPhase1Tests(unittest.TestCase):
             data_dir = Path(directory)
             db_path = data_dir / "minicpanel.db"
             migrate("up", db_path=db_path, allowed_data_dir=data_dir)
-            self.assertEqual(schema_version(db_path, allowed_data_dir=data_dir), 2)
+            self.assertEqual(schema_version(db_path, allowed_data_dir=data_dir), 4)
             with sqlite3.connect(db_path) as connection:
                 table = connection.execute(
                     "SELECT name FROM sqlite_master WHERE type='table' "
@@ -44,6 +44,10 @@ class InventoryPhase1Tests(unittest.TestCase):
                 ).fetchone()
                 self.assertIsNotNone(table)
 
+            migrate("down", db_path=db_path, allowed_data_dir=data_dir)
+            self.assertEqual(schema_version(db_path, allowed_data_dir=data_dir), 3)
+            migrate("down", db_path=db_path, allowed_data_dir=data_dir)
+            self.assertEqual(schema_version(db_path, allowed_data_dir=data_dir), 2)
             migrate("down", db_path=db_path, allowed_data_dir=data_dir)
             self.assertEqual(schema_version(db_path, allowed_data_dir=data_dir), 1)
             with sqlite3.connect(db_path) as connection:
@@ -55,7 +59,7 @@ class InventoryPhase1Tests(unittest.TestCase):
 
             migrate("up", db_path=db_path, allowed_data_dir=data_dir)
             migrate("rollback", db_path=db_path, allowed_data_dir=data_dir)
-            self.assertEqual(schema_version(db_path, allowed_data_dir=data_dir), 1)
+            self.assertEqual(schema_version(db_path, allowed_data_dir=data_dir), 3)
 
     def test_migration_rejects_arbitrary_database_path(self):
         with tempfile.TemporaryDirectory() as directory:

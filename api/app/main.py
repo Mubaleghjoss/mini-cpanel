@@ -23,6 +23,7 @@ from app.api.users import router as users_router
 from app.api.docker import router as docker_router
 from app.api.ingress import router as ingress_router
 from app.api.applications import router as applications_router
+from app.api.operation_contexts import router as operation_contexts_router
 from app.core.scheduler import start_scheduler
 
 
@@ -99,6 +100,7 @@ app.include_router(users_router, prefix=f"{settings.API_V1_STR}/users", tags=["U
 app.include_router(docker_router, prefix=f"{settings.API_V1_STR}/docker", tags=["Docker Administrator"])
 app.include_router(ingress_router, prefix=f"{settings.API_V1_STR}/ingress", tags=["Ingress Proxy Router"])
 app.include_router(applications_router, prefix=f"{settings.API_V1_STR}/applications", tags=["Applications Inventory"])
+app.include_router(operation_contexts_router, prefix=f"{settings.API_V1_STR}/operation-contexts", tags=["Future Operation Context"])
 
 
 @app.get("/health")

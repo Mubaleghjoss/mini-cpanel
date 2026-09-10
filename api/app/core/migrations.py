@@ -26,7 +26,11 @@ def validate_database_path(db_path: Path, allowed_data_dir: Path) -> Path:
 
 
 def _baseline_up(engine) -> None:
-    inventory_names = {"application_inventory", "application_environments"}
+    inventory_names = {
+        "application_inventory",
+        "application_environments",
+        "environment_operation_contexts",
+    }
     legacy_tables = [table for table in Base.metadata.sorted_tables if table.name not in inventory_names]
     Base.metadata.create_all(engine, tables=legacy_tables)
 
@@ -86,9 +90,145 @@ def _inventory_down(engine) -> None:
         connection.exec_driver_sql("DROP TABLE IF EXISTS application_inventory")
 
 
+def _operation_contexts_up(engine) -> None:
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            """
+            CREATE TABLE environment_operation_contexts (
+                id VARCHAR NOT NULL PRIMARY KEY,
+                application_environment_id VARCHAR NOT NULL,
+                application_id VARCHAR NOT NULL,
+                application_identity VARCHAR NOT NULL,
+                environment_key VARCHAR NOT NULL,
+                target_type VARCHAR NOT NULL,
+                action_class VARCHAR NOT NULL,
+                policy_mode VARCHAR NOT NULL,
+                read_only BOOLEAN NOT NULL,
+                created_at DATETIME NOT NULL,
+                CONSTRAINT ck_environment_operation_context_environment_key CHECK (
+                    environment_key IN ('production', 'staging')
+                ),
+                CONSTRAINT ck_environment_operation_context_target_type CHECK (
+                    target_type IN ('database_connection', 'backup', 'release')
+                ),
+                CONSTRAINT ck_environment_operation_context_action_class CHECK (
+                    action_class IN ('registration', 'plan', 'run', 'deploy')
+                ),
+                CONSTRAINT ck_environment_operation_context_policy_mode CHECK (
+                    policy_mode IN ('standard', 'read_only')
+                ),
+                FOREIGN KEY(application_environment_id) REFERENCES application_environments (id) ON DELETE RESTRICT,
+                FOREIGN KEY(application_id) REFERENCES application_inventory (id) ON DELETE RESTRICT
+            )
+            """
+        )
+        # Context fields are submission snapshots; later actions cannot rewrite them.
+        connection.exec_driver_sql(
+            """
+            CREATE TRIGGER prevent_environment_operation_context_snapshot_updates
+            BEFORE UPDATE ON environment_operation_contexts
+            BEGIN
+                SELECT RAISE(ABORT, 'environment operation context snapshots are immutable');
+            END
+            """
+        )
+
+
+def _operation_contexts_down(engine) -> None:
+    with engine.begin() as connection:
+        connection.exec_driver_sql("DROP TRIGGER IF EXISTS prevent_environment_operation_context_snapshot_updates")
+        connection.exec_driver_sql("DROP TRIGGER IF EXISTS validate_environment_operation_context_application")
+        connection.exec_driver_sql("DROP TABLE IF EXISTS environment_operation_contexts")
+
+
+def _operation_context_safety_up(engine) -> None:
+    """Rebuild the Phase 2.1 table with complete integrity gates, preserving snapshots."""
+    with engine.begin() as connection:
+        connection.exec_driver_sql("DROP TRIGGER IF EXISTS prevent_environment_operation_context_snapshot_updates")
+        connection.exec_driver_sql(
+            """
+            CREATE TABLE environment_operation_contexts_rebuilt (
+                id VARCHAR NOT NULL PRIMARY KEY, application_environment_id VARCHAR NOT NULL,
+                application_id VARCHAR NOT NULL, application_identity VARCHAR NOT NULL,
+                environment_key VARCHAR NOT NULL, target_type VARCHAR NOT NULL,
+                action_class VARCHAR NOT NULL, policy_mode VARCHAR NOT NULL,
+                read_only BOOLEAN NOT NULL, created_at DATETIME NOT NULL,
+                CONSTRAINT ck_environment_operation_context_environment_key CHECK (environment_key IN ('production', 'staging')),
+                CONSTRAINT ck_environment_operation_context_target_type CHECK (target_type IN ('database_connection', 'backup', 'release')),
+                CONSTRAINT ck_environment_operation_context_action_class CHECK (action_class IN ('registration', 'plan', 'run', 'deploy')),
+                CONSTRAINT ck_environment_operation_context_policy_mode CHECK (policy_mode IN ('standard', 'read_only')),
+                CONSTRAINT ck_environment_operation_context_read_only CHECK (read_only IN (0, 1)),
+                FOREIGN KEY(application_environment_id) REFERENCES application_environments (id) ON DELETE RESTRICT,
+                FOREIGN KEY(application_id) REFERENCES application_inventory (id) ON DELETE RESTRICT
+            )
+            """
+        )
+        connection.exec_driver_sql("INSERT INTO environment_operation_contexts_rebuilt SELECT * FROM environment_operation_contexts")
+        connection.exec_driver_sql("DROP TABLE environment_operation_contexts")
+        connection.exec_driver_sql("ALTER TABLE environment_operation_contexts_rebuilt RENAME TO environment_operation_contexts")
+        connection.exec_driver_sql(
+            """
+            CREATE TRIGGER validate_environment_operation_context_application
+            BEFORE INSERT ON environment_operation_contexts
+            WHEN NOT EXISTS (SELECT 1 FROM application_environments
+                             WHERE id = NEW.application_environment_id AND project_id = NEW.application_id)
+            BEGIN
+                SELECT RAISE(ABORT, 'operation context application does not match environment');
+            END
+            """
+        )
+        connection.exec_driver_sql(
+            """
+            CREATE TRIGGER prevent_environment_operation_context_snapshot_updates
+            BEFORE UPDATE ON environment_operation_contexts
+            BEGIN
+                SELECT RAISE(ABORT, 'environment operation context snapshots are immutable');
+            END
+            """
+        )
+
+
+def _operation_context_safety_down(engine) -> None:
+    """Reverse the safety-table rebuild while preserving its snapshots."""
+    with engine.begin() as connection:
+        connection.exec_driver_sql("DROP TRIGGER IF EXISTS prevent_environment_operation_context_snapshot_updates")
+        connection.exec_driver_sql("DROP TRIGGER IF EXISTS validate_environment_operation_context_application")
+        connection.exec_driver_sql("ALTER TABLE environment_operation_contexts RENAME TO environment_operation_contexts_rebuilt")
+        connection.exec_driver_sql(
+            """
+            CREATE TABLE environment_operation_contexts (
+                id VARCHAR NOT NULL PRIMARY KEY, application_environment_id VARCHAR NOT NULL,
+                application_id VARCHAR NOT NULL, application_identity VARCHAR NOT NULL,
+                environment_key VARCHAR NOT NULL, target_type VARCHAR NOT NULL,
+                action_class VARCHAR NOT NULL, policy_mode VARCHAR NOT NULL,
+                read_only BOOLEAN NOT NULL, created_at DATETIME NOT NULL,
+                CONSTRAINT ck_environment_operation_context_environment_key CHECK (environment_key IN ('production', 'staging')),
+                CONSTRAINT ck_environment_operation_context_target_type CHECK (target_type IN ('database_connection', 'backup', 'release')),
+                CONSTRAINT ck_environment_operation_context_action_class CHECK (action_class IN ('registration', 'plan', 'run', 'deploy')),
+                CONSTRAINT ck_environment_operation_context_policy_mode CHECK (policy_mode IN ('standard', 'read_only')),
+                FOREIGN KEY(application_environment_id) REFERENCES application_environments (id) ON DELETE RESTRICT,
+                FOREIGN KEY(application_id) REFERENCES application_inventory (id) ON DELETE RESTRICT
+            )
+            """
+        )
+        connection.exec_driver_sql("INSERT INTO environment_operation_contexts SELECT * FROM environment_operation_contexts_rebuilt")
+        connection.exec_driver_sql("DROP TABLE environment_operation_contexts_rebuilt")
+        connection.exec_driver_sql(
+            """
+            CREATE TRIGGER prevent_environment_operation_context_snapshot_updates
+            BEFORE UPDATE ON environment_operation_contexts
+            BEGIN
+                SELECT RAISE(ABORT, 'environment operation context snapshots are immutable');
+            END
+            """
+        )
+
+
 MIGRATIONS: tuple[tuple[int, str, Callable, Callable], ...] = (
     (1, "baseline", _baseline_up, _baseline_down),
     (2, "phase_1_inventory", _inventory_up, _inventory_down),
+    (3, "phase_2_1_operation_contexts", _operation_contexts_up, _operation_contexts_down),
+    (4, "phase_2_1_operation_context_safety", _operation_context_safety_up, _operation_context_safety_down),
 )
 
 

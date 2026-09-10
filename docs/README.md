@@ -40,3 +40,4 @@ Detailed route parameters, request payloads, and response JSON schemas are categ
 6. [Ingress Proxy Router](ingress.md): Creating custom reverse proxy routes (Caddy/Nginx) for any port or address.
 7. [Backups, Cron Jobs & System Metrics](backups_cron_system.md): Backing up databases, managing scheduled cron jobs, reading live RAM/CPU telemetry, and system settings.
 8. [App Store, Web Terminal, Alerting & Users](notifications_marketplace_terminal_users.md): 1-click template installers, SSH terminal websockets, Discord/Telegram webhook alert rules, and user account management.
+9. [Canonical Future Operation Context](operation_contexts.md): Server-resolved Application -> Environment validation boundary and compatibility policy.
