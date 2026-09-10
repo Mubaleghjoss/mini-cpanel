@@ -138,6 +138,28 @@ class InventoryPhase1Tests(unittest.TestCase):
                 mutation_user(current_user=user)
             self.assertEqual(raised.exception.status_code, 403)
 
+    def test_seed_reconciles_existing_sma_metadata_only(self):
+        db = self.make_session()
+        sma = ApplicationInventory(identity="sma-afbs", display_name="SMA AFBS")
+        sma.environments.append(ApplicationEnvironment(environment_key="production", branch="main"))
+        keuangan = ApplicationInventory(identity="keuangan-sma-afbs", display_name="Keuangan SMA AFBS")
+        db.add_all([sma, keuangan])
+        db.commit()
+
+        self.assertEqual(seed_inventory(db), 2)
+        db.refresh(sma)
+        db.refresh(keuangan)
+        self.assertEqual(sma.source_path, "/home/hermesadmin/projects/akses-smaafbs")
+        self.assertEqual({item.environment_key for item in sma.environments}, {"staging"})
+        staging = sma.environments[0]
+        self.assertEqual(staging.runtime_path, "/var/www/app-smaafbs-staging/public")
+        self.assertEqual(staging.domain, "staging-app.smaafbs.sch.id")
+        self.assertIsNone(staging.branch)
+        self.assertIsNone(staging.service_identifier)
+        self.assertIs(staging.read_only_default, False)
+        self.assertEqual(keuangan.source_path, "/home/hermesadmin/projects/keuangan-smaafbs")
+        self.assertEqual(keuangan.environments, [])
+
     def test_initial_inventory_seed_is_idempotent(self):
         db = self.make_session()
         self.assertEqual(seed_inventory(db), 4)
@@ -157,9 +179,20 @@ class InventoryPhase1Tests(unittest.TestCase):
         self.assertEqual(environments["staging"].branch, "develop")
         self.assertIs(environments["staging"].read_only_default, False)
 
-        for identity in ("sma-afbs", "keuangan-sma-afbs", "mini-cpanel"):
-            item = db.query(ApplicationInventory).filter_by(identity=identity).one()
-            self.assertEqual(item.environments, [])
+        sma = db.query(ApplicationInventory).filter_by(identity="sma-afbs").one()
+        self.assertEqual(sma.source_path, "/home/hermesadmin/projects/akses-smaafbs")
+        staging = {item.environment_key: item for item in sma.environments}
+        self.assertEqual(set(staging), {"staging"})
+        self.assertEqual(staging["staging"].runtime_path, "/var/www/app-smaafbs-staging/public")
+        self.assertEqual(staging["staging"].domain, "staging-app.smaafbs.sch.id")
+        self.assertIsNone(staging["staging"].branch)
+        self.assertIsNone(staging["staging"].service_identifier)
+        self.assertIs(staging["staging"].read_only_default, False)
+
+        keuangan = db.query(ApplicationInventory).filter_by(identity="keuangan-sma-afbs").one()
+        self.assertEqual(keuangan.source_path, "/home/hermesadmin/projects/keuangan-smaafbs")
+        self.assertEqual(keuangan.environments, [])
+        self.assertEqual(db.query(ApplicationInventory).filter_by(identity="mini-cpanel").one().environments, [])
 
 
 if __name__ == "__main__":
